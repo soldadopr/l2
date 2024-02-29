@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+// Interface for interacting with zk-SNARKs verifier contract
+interface ZkVerifier {
+    function verifyProof(bytes memory proof) external returns (bool);
+}
+
+contract Validium {
+    struct Transaction {
+        address from;
+        address to;
+        uint256 amount;
+        bytes zkProof; // zk-SNARK proof for transaction validity
+    }
+
+    mapping(uint256 => Transaction) public transactions;
+    uint256 public lastTransactionId;
+
+    ZkVerifier public zkVerifierContract;
+
+    event NewTransaction(uint256 indexed transactionId, address indexed from, address indexed to, uint256 amount);
+
+    constructor(address _zkVerifierContract) {
+        zkVerifierContract = ZkVerifier(_zkVerifierContract);
+    }
+
+    // Submit a new transaction to the Validium rollup
+    function submitTransaction(address _to, uint256 _amount, bytes memory _zkProof) external {
+        // Verify the zk-SNARK proof for transaction validity
+        require(zkVerifierContract.verifyProof(_zkProof), "Proof verification failed");
+
+        lastTransactionId++;
+        transactions[lastTransactionId] = Transaction(msg.sender, _to, _amount, _zkProof);
+        emit NewTransaction(lastTransactionId, msg.sender, _to, _amount);
+    }
+
+    // Off-chain processing of transactions with zk-SNARK proof validation
+    function processTransactions(uint256[] calldata _transactionIds, bytes[] calldata _zkProofs) external {
+        require(_transactionIds.length == _zkProofs.length, "Invalid input data length");
+
+        for (uint256 i = 0; i < _transactionIds.length; i++) {
+            uint256 transactionId = _transactionIds[i];
+            Transaction storage transaction = transactions[transactionId];
+            require(transaction.from != address(0), "Transaction does not exist");
+
+            // Verify the zk-SNARK proof for transaction validity
+            require(zkVerifierContract.verifyProof(_zkProofs[i]), "Proof verification failed");
+
+            // Process the transaction off-chain (e.g., update balances, transfer funds)
+            // For simplicity, we emit an event here
+            emit NewTransaction(transactionId, transaction.from, transaction.to, transaction.amount);
+
+            // Clear the transaction after processing
+            delete transactions[transactionId];
+        }
+    }
+}
